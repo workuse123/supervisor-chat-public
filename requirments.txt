@@ -1,4 +1,1 @@
-streamlit
-databricks-sdk
-openai
-streamlit requests databricks-sdk
+gradio databricks-sdk requests
