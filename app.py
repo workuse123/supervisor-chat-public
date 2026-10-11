@@ -1,12 +1,13 @@
-import os
-import requests
-import streamlit as st
+%python
+import gradio as gr
 from databricks.sdk import WorkspaceClient
+import os
 
-DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
-DATABRICKS_CLIENT_ID = os.getenv("DATABRICKS_CLIENT_ID")
-DATABRICKS_CLIENT_SECRET = os.getenv("DATABRICKS_CLIENT_SECRET")
-ENDPOINT = os.getenv("SERVING_ENDPOINT", "mas-58a5288f-endpoint")
+# Set your Databricks credentials here or use environment variables
+DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "https://<your-workspace>.cloud.databricks.com")
+DATABRICKS_CLIENT_ID = os.getenv("DATABRICKS_CLIENT_ID", "<your-client-id>")
+DATABRICKS_CLIENT_SECRET = os.getenv("DATABRICKS_CLIENT_SECRET", "<your-client-secret>")
+ENDPOINT_NAME = os.getenv("SERVING_ENDPOINT", "mas-58a5288f-endpoint")
 
 w = WorkspaceClient(
     host=DATABRICKS_HOST,
@@ -14,48 +15,24 @@ w = WorkspaceClient(
     client_secret=DATABRICKS_CLIENT_SECRET,
 )
 
-host = w.config.host.rstrip("/")
-if not host.startswith("http"):
-    host = "https://" + host
-URL = f"{host}/serving-endpoints/{ENDPOINT}/invocations"
-
-def ask_agent(messages):
+# Example function to call Databricks model serving endpoint
+def chat_fn(message, history):
+    host = w.config.host.rstrip("/")
+    if not host.startswith("http"):
+        host = "https://" + host
+    url = f"{host}/serving-endpoints/{ENDPOINT_NAME}/invocations"
     headers = w.config.authenticate()
     headers["Content-Type"] = "application/json"
-    r = requests.post(URL, headers=headers, json={"input": messages}, timeout=300)
-    if r.status_code != 200:
-        raise RuntimeError(f"{r.status_code}: {r.text}")
-    data = r.json()
-    texts = []
-    for item in data.get("output", []):
-        if item.get("type") == "message":
-            for c in item.get("content", []):
-                if c.get("type") == "output_text":
-                    texts.append(c.get("text", ""))
-    if texts:
-        return texts[-1]
-    if "choices" in data:
-        return data["choices"][0]["message"]["content"]
-    return str(data)
+    # Send chat history if endpoint supports it, else just last message
+    try:
+        response = requests.post(url, headers=headers, json={"input": [message]}, timeout=300)
+        if response.status_code == 200:
+            data = response.json()
+            answer = str(data.get("output", "No response"))
+        else:
+            answer = f"Error: {response.status_code} {response.text}"
+    except Exception as e:
+        answer = f"Exception: {e}"
+    return answer
 
-st.title("Ask the Assistant")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-if prompt := st.chat_input("Ask your question"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            try:
-                answer = ask_agent(st.session_state.messages)
-            except Exception as e:
-                answer = f"Sorry, something went wrong: {e}"
-        st.markdown(answer)
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+gr.ChatInterface(chat_fn).launch(share=True)
