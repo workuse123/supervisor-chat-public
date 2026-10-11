@@ -1,3 +1,4 @@
 streamlit
 databricks-sdk
 openai
+streamlit requests databricks-sdk
